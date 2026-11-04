@@ -1,5 +1,8 @@
+import { categoryLabels } from "@/features/case/utils";
 import type {
+  Answer,
   CaseAnalysis,
+  EvidenceCategory,
   SubmissionDetails,
   UserStatement,
 } from "@/types/case";
@@ -8,26 +11,25 @@ interface StatementScreenProps {
   statement: UserStatement;
   analysis?: CaseAnalysis;
   submission: SubmissionDetails;
-  includedEvidenceIds: string[];
   onStatementChange: (statement: UserStatement) => void;
   onSubmissionChange: (submission: SubmissionDetails) => void;
-  onEvidenceToggle: (id: string) => void;
   onBack: () => void;
   onNext: () => void;
   loading: boolean;
+  error?: string;
 }
 
 const answerOptions = [
   { id: "no", label: "아니요" },
   { id: "yes", label: "예" },
-  { id: "unknown", label: "잘 모르겠어요" },
+  { id: "unknown", label: "모르겠어요" },
 ] as const;
 
 const exchanges = [
   { id: "unspecified", label: "선택하지 않음" },
-  { id: "upbit", label: "Upbit" },
+  { id: "upbit", label: "업비트" },
+  { id: "binance", label: "바이낸스" },
   { id: "coinbase", label: "Coinbase" },
-  { id: "binance", label: "Binance" },
   { id: "kraken", label: "Kraken" },
   { id: "other", label: "기타" },
 ] as const;
@@ -36,8 +38,8 @@ interface QuestionProps {
   number: string;
   label: string;
   name: string;
-  value: "no" | "yes" | "unknown";
-  onChange: (value: "no" | "yes" | "unknown") => void;
+  value: Answer;
+  onChange: (value: Answer) => void;
 }
 
 function Question({ number, label, name, value, onChange }: QuestionProps) {
@@ -62,17 +64,18 @@ function Question({ number, label, name, value, onChange }: QuestionProps) {
   );
 }
 
+const categoryOrder: EvidenceCategory[] = ["verified", "derived", "unverifiable"];
+
 export function StatementScreen({
   statement,
   analysis,
   submission,
-  includedEvidenceIds,
   onStatementChange,
   onSubmissionChange,
-  onEvidenceToggle,
   onBack,
   onNext,
   loading,
+  error,
 }: StatementScreenProps) {
   const addAttachments = (files: FileList | null) => {
     if (!files) return;
@@ -106,7 +109,7 @@ export function StatementScreen({
     <section className="screen-section" aria-labelledby="statement-title">
       <div className="section-heading compact-heading">
         <h1 id="statement-title">내 설명</h1>
-        <p>입금 당시 상황을 확인하세요.</p>
+        <p>답하지 않은 질문은 자료에 &ldquo;미확인&rdquo;으로 표시됩니다.</p>
       </div>
 
       <div className="statement-layout">
@@ -120,7 +123,7 @@ export function StatementScreen({
           />
           <Question
             number="02"
-            label="발신자를 알고 계신가요?"
+            label="보낸 사람을 알고 계신가요?"
             name="sender"
             value={statement.knowsSender}
             onChange={(value) => onStatementChange({ ...statement, knowsSender: value })}
@@ -134,7 +137,7 @@ export function StatementScreen({
           />
 
           <label className="text-field compact-field statement-date-field">
-            <span>입금 확인일</span>
+            <span>입금을 처음 알게 된 날 <small>선택</small></span>
             <input
               type="date"
               value={statement.discoveredAt}
@@ -146,7 +149,7 @@ export function StatementScreen({
             <span>추가 설명 <small>선택</small></span>
             <textarea
               rows={5}
-              placeholder="거래소 담당자가 알아야 할 사실만 간결하게 적어주세요."
+              placeholder="거래소 담당자가 알아야 할 사실만 직접 적어주세요."
               value={statement.note}
               onChange={(event) => onStatementChange({ ...statement, note: event.target.value })}
             />
@@ -178,7 +181,7 @@ export function StatementScreen({
                       <small>{Math.max(1, Math.round(attachment.size / 1024))} KB</small>
                     </span>
                     <button type="button" onClick={() => removeAttachment(attachment.id)}>
-                      제외
+                      빼기
                     </button>
                   </li>
                 ))}
@@ -225,33 +228,35 @@ export function StatementScreen({
         <aside className="report-selection">
           <div className="panel-heading simple-panel-heading">
             <div>
-              <h2>포함할 근거</h2>
-              <p>소명 자료에 넣을 항목을 선택하세요.</p>
+              <h2>자료에 들어가는 근거</h2>
+              <p>온체인 조사 결과는 전부 들어갑니다.</p>
             </div>
           </div>
-          <div className="evidence-checklist">
-            {analysis?.evidence.map((item) => (
-              <label key={item.id}>
-                <input
-                  type="checkbox"
-                  checked={includedEvidenceIds.includes(item.id)}
-                  onChange={() => onEvidenceToggle(item.id)}
-                />
-                <span>
-                  <b>{item.title}</b>
-                  <small>{item.sourceLabel}</small>
-                </span>
-              </label>
-            ))}
+          <div className="evidence-summary">
+            {categoryOrder.map((category) => {
+              const items = analysis?.evidence.filter((item) => item.category === category) ?? [];
+              return (
+                <div key={category}>
+                  <b>{categoryLabels[category]} {items.length}개</b>
+                  <ul>
+                    {items.map((item) => <li key={item.id}>{item.title}</li>)}
+                  </ul>
+                </div>
+              );
+            })}
           </div>
-          <p className="selection-note">선택하지 않은 항목은 PDF에 포함되지 않습니다.</p>
+          <p className="selection-note">
+            불리한 기록도 빼거나 고칠 수 없습니다. 담당자가 원본 링크로 직접 확인할 수 있어야 자료를 믿을 수 있기 때문입니다.
+          </p>
         </aside>
       </div>
 
+      {error ? <p className="form-error" role="alert">{error}</p> : null}
+
       <div className="screen-actions">
         <button className="secondary-button" type="button" onClick={onBack}>이전</button>
-        <button className="primary-button" type="button" onClick={onNext} disabled={loading || includedEvidenceIds.length === 0}>
-          {loading ? "초안 생성 중" : "소명 자료 만들기"}
+        <button className="primary-button" type="button" onClick={onNext} disabled={loading}>
+          {loading ? "자료 만드는 중" : "소명 자료 만들기"}
         </button>
       </div>
     </section>

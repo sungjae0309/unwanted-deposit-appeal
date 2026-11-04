@@ -55,9 +55,9 @@ export function EvidenceGraph({ analysis }: EvidenceGraphProps) {
         ))}
       </svg>
       <div className="graph-caption">
-        <span><i className="legend-line legend-line-issue" />문제 거래</span>
-        <span><i className="legend-line" />유사 금액 송금</span>
-        <span>표시 범위: 핵심 관계 5개</span>
+        <span><i className="legend-line legend-line-issue" />문제 입금</span>
+        <span><i className="legend-line" />비슷한 금액 전송</span>
+        <span>표시: 주소 {analysis.nodes.length}개 (비슷한 금액 {analysis.facts.similarAmountCount}개 중 일부)</span>
       </div>
     </div>
   );

@@ -1,53 +1,51 @@
 import { EvidenceGraph } from "@/features/case/EvidenceGraph";
-import { shortAddress } from "@/features/case/utils";
-import type { CaseAnalysis, Transfer } from "@/types/case";
+import { SourceLinks } from "@/features/case/SourceLinks";
+import { categoryLabels, formatKoreanDateTime, providerLabels, shortAddress } from "@/features/case/utils";
+import type { CaseAnalysis } from "@/types/case";
 
 interface AnalysisScreenProps {
-  transfer?: Transfer;
   analysis?: CaseAnalysis;
   loading: boolean;
   onBack: () => void;
   onNext: () => void;
 }
 
-const kindLabels = {
-  verified: "온체인 확인",
-  derived: "분석 정황",
-  unknown: "확인 필요",
-} as const;
-
-export function AnalysisScreen({ transfer, analysis, loading, onBack, onNext }: AnalysisScreenProps) {
-  if (loading || !transfer || !analysis) {
+export function AnalysisScreen({ analysis, loading, onBack, onNext }: AnalysisScreenProps) {
+  if (loading || !analysis) {
     return (
       <section className="analysis-loading" aria-live="polite">
         <div className="analysis-pulse" />
-        <h1>거래 분석 중</h1>
-        <p>이전 거래와 유사 송금 기록을 확인합니다.</p>
+        <h1>온체인 기록 조사 중</h1>
+        <p>이전 거래와 비슷한 금액의 전송 기록을 확인합니다.</p>
       </section>
     );
   }
 
+  const { transfer, facts, scope, sanctions } = analysis;
+
   return (
     <section className="screen-section analysis-screen" aria-labelledby="analysis-title">
       <div className="section-heading compact-heading">
-        <h1 id="analysis-title">거래 분석</h1>
-        <p>문제 입금과 직접 관련된 기록입니다.</p>
+        <h1 id="analysis-title">온체인 조사</h1>
+        <p>확인된 기록, 분석한 정황, 확인할 수 없는 것을 나눠 보여줍니다. 이 화면의 내용은 고칠 수 없습니다.</p>
       </div>
 
       <div className="case-strip">
         <span>
-          <small>문제 거래</small>
-          <b>{transfer.amount} {transfer.asset}</b>
+          <small>문제 입금</small>
+          <b>{transfer.displayValue} {transfer.asset}</b>
         </span>
         <span>
-          <small>발신 주소</small>
+          <small>보낸 주소</small>
           <b>{shortAddress(transfer.from, 9, 7)}</b>
         </span>
         <span>
-          <small>분석 범위</small>
-          <b>{analysis.windowLabel}</b>
+          <small>조사 기간</small>
+          <b>{scope.windowLabel}</b>
         </span>
-        <button type="button" className="source-button">거래 원문 보기</button>
+        <a className="source-button" href={transfer.explorerUrl} target="_blank" rel="noreferrer">
+          거래 원문 보기
+        </a>
       </div>
 
       <div className="analysis-layout">
@@ -55,33 +53,46 @@ export function AnalysisScreen({ transfer, analysis, loading, onBack, onNext }: 
           <div className="panel-heading simple-panel-heading">
             <div>
               <h2>거래 관계</h2>
-              <p>문제 거래와 유사 송금 주소만 표시합니다.</p>
+              <p>문제 입금과 비슷한 금액을 받은 주소 일부만 표시합니다.</p>
             </div>
           </div>
           <EvidenceGraph analysis={analysis} />
 
           <div className="fact-table" aria-label="분석 요약">
-            <div><span>이전 직접 거래</span><b>{analysis.priorDirectTransactions}건</b></div>
-            <div><span>발신자의 고유 수신 주소</span><b>{analysis.senderRecipientCount}개</b></div>
-            <div><span>유사 금액 송금</span><b>{analysis.similarAmountCount}건</b></div>
-            <div><span>발신자에게 직접 회신</span><b>{analysis.returnedToSender ? "확인됨" : "확인되지 않음"}</b></div>
+            <div><span>입금 전 직접 거래</span><b>{facts.priorDirectTransactions}건</b></div>
+            <div><span>보낸 주소가 보낸 고유 주소</span><b>{facts.senderRecipientCount}개</b></div>
+            <div><span>그중 비슷한 금액</span><b>{facts.similarAmountCount}개</b></div>
+            <div><span>보낸 주소로 다시 보냄</span><b>{facts.returnedToSender ? "있음" : "확인되지 않음"}</b></div>
           </div>
+
+          <dl className="scope-box" aria-label="조사 범위">
+            <div><dt>조사 기간</dt><dd>{formatKoreanDateTime(scope.windowStart)} ~ {formatKoreanDateTime(scope.windowEnd)}</dd></div>
+            <div>
+              <dt>조회 건수</dt>
+              <dd>
+                {scope.fetchedTransfers.toLocaleString("en-US")}건 (상한 {scope.maxTransfers.toLocaleString("en-US")}건)
+                {scope.complete ? "" : " · 상한에 걸려 일부만 조회"}
+              </dd>
+            </div>
+            <div><dt>제재 목록</dt><dd>{sanctions.listName} · {sanctions.senderMatched ? "일치" : "일치하지 않음"}</dd></div>
+            <div><dt>데이터</dt><dd>{providerLabels[scope.provider]} · {formatKoreanDateTime(scope.fetchedAt)} 조회</dd></div>
+          </dl>
         </div>
 
         <aside className="evidence-panel">
           <div className="panel-heading simple-panel-heading">
             <div>
               <h2>조사 결과</h2>
-              <p>{analysis.evidence.length}개 항목</p>
+              <p>{analysis.evidence.length}개 항목 · 모두 자료에 들어갑니다</p>
             </div>
           </div>
           <div className="evidence-list">
             {analysis.evidence.map((item) => (
-              <article key={item.id} className={`evidence-item evidence-${item.kind}`}>
-                <span>{kindLabels[item.kind]}</span>
+              <article key={item.id} className={`evidence-item evidence-${item.category}`}>
+                <span>{categoryLabels[item.category]}</span>
                 <h3>{item.title}</h3>
                 <p>{item.description}</p>
-                <button type="button">{item.sourceLabel}</button>
+                <SourceLinks sources={item.sources} />
               </article>
             ))}
           </div>

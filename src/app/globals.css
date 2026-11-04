@@ -941,8 +941,8 @@ select:focus-visible {
   letter-spacing: 0.04em;
 }
 
-.evidence-item.evidence-unknown > span,
-.evidence-item.evidence-unknown h3 {
+.evidence-item.evidence-unverifiable > span,
+.evidence-item.evidence-unverifiable h3 {
   color: var(--issue);
 }
 
@@ -1667,5 +1667,207 @@ select:focus-visible {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── 뼈대에서 추가한 스타일 ───────────────────────────── */
+
+a.source-button {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.source-tabs {
+  margin-bottom: 12px;
+}
+
+.address-helpers {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+}
+
+.address-helpers .text-button {
+  font-size: 13px;
+}
+
+.address-helpers small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.exchange-form {
+  padding: 14px;
+  margin-bottom: 14px;
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.exchange-form .text-field {
+  margin-top: 0;
+}
+
+.exchange-form .text-field > span {
+  font-size: 14px;
+}
+
+.key-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.demo-badge {
+  margin: 16px 0 0;
+  padding: 8px 10px;
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: var(--radius);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.scope-box {
+  margin: 0;
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 16px;
+  background: var(--surface-subtle);
+  border-top: 1px solid var(--border);
+}
+
+.scope-box div {
+  min-width: 0;
+}
+
+.scope-box dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.scope-box dd {
+  margin: 1px 0 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.report-scope {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.source-links {
+  padding: 3px 0 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  list-style: none;
+}
+
+.report-copy .source-links li {
+  padding: 0;
+  border: 0;
+  display: inline-flex;
+}
+
+.report-copy .source-links li::before {
+  content: none;
+}
+
+.report-copy .source-links li {
+  counter-increment: none;
+}
+
+/* 좁은 화면에서 그래프가 패널을 밀어내지 않도록 */
+.analysis-layout > *,
+.statement-layout > *,
+.report-layout > * {
+  min-width: 0;
+}
+
+.source-links li {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 11px;
+}
+
+.source-links a {
+  color: var(--action);
+  text-decoration: none;
+}
+
+.source-links a:hover {
+  text-decoration: underline;
+}
+
+.source-links code {
+  color: var(--faint);
+  font-size: 10px;
+}
+
+.report-unverifiable h3 {
+  color: var(--issue);
+}
+
+.statement-caption {
+  margin: 0 0 6px !important;
+  color: var(--muted) !important;
+  font-size: 11px !important;
+}
+
+.evidence-summary {
+  padding: 4px 14px 8px;
+}
+
+.evidence-summary > div {
+  padding: 8px 0;
+}
+
+.evidence-summary > div:not(:last-child) {
+  border-bottom: 1px solid var(--border);
+}
+
+.evidence-summary b {
+  font-size: 13px;
+}
+
+.evidence-summary ul {
+  padding-left: 16px;
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.is-sidebar-collapsed .demo-badge { display: none; }
+
+@media (max-width: 860px) {
+  .demo-badge { display: none; }
+  .exchange-form { grid-template-columns: 1fr; }
+  .exchange-form .secondary-button { width: 100%; }
+  .scope-box { grid-template-columns: 1fr; }
+}
+
+@media print {
+  .demo-badge { display: none; }
+  .source-links a::after {
+    content: " (" attr(href) ")";
+    color: var(--muted);
+    font-size: 9px;
+    overflow-wrap: anywhere;
   }
 }

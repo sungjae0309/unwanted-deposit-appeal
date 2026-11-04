@@ -1,23 +1,32 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { analyzeCase, createReport, getInboundTransfers } from "@/lib/api/cases";
-import { DEMO_WALLET } from "@/mocks/case";
+import {
+  analyzeCase,
+  createReport,
+  errorMessage,
+  getExchangeDeposits,
+  getInboundTransfers,
+  lookupTransfers,
+} from "@/lib/api/cases";
+import { readWalletAddress } from "@/lib/wallet";
 import { AnalysisScreen } from "@/features/case/screens/AnalysisScreen";
 import { ReportScreen } from "@/features/case/screens/ReportScreen";
 import { StatementScreen } from "@/features/case/screens/StatementScreen";
-import { TransactionScreen } from "@/features/case/screens/TransactionScreen";
+import { TransactionScreen, type IntakeSource } from "@/features/case/screens/TransactionScreen";
 import type {
   CaseAnalysis,
   CaseReport,
   CaseStep,
+  ExchangeDeposit,
+  ExchangeSource,
   SubmissionDetails,
   Transfer,
   UserStatement,
 } from "@/types/case";
 
 const steps: Array<{ id: CaseStep; label: string }> = [
-  { id: "transaction", label: "입금 조회" },
+  { id: "transaction", label: "입금 찾기" },
   { id: "analysis", label: "온체인 조사" },
   { id: "statement", label: "내 설명" },
   { id: "report", label: "자료 생성" },
@@ -28,25 +37,36 @@ const initialSubmission: SubmissionDetails = {
   requestText: "",
 };
 
+// 모든 답은 "선택 안 함"으로 시작합니다. 도구가 답을 대신 고르지 않기 위해서입니다.
 const initialStatement: UserStatement = {
-  requestedTransfer: "no",
-  knowsSender: "no",
-  hadPurpose: "no",
-  discoveredAt: "2026-10-28",
-  note: "해당 입금을 요청한 사실이 없으며 발신자와 별도로 연락하거나 거래한 적이 없습니다.",
+  requestedTransfer: null,
+  knowsSender: null,
+  hadPurpose: null,
+  discoveredAt: "",
+  note: "",
   attachments: [],
 };
+
+// 데모 모드 고정 데이터의 지갑 주소 (src/fixtures/demo-case.ts)
+export const EXAMPLE_WALLET = "0x1111111111111111111111111111111111111111";
+
+const isAddress = (value: string) => /^0x[a-fA-F0-9]{40}$/.test(value);
 
 export function CaseWorkspace() {
   const [step, setStep] = useState<CaseStep>("transaction");
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [source, setSource] = useState<IntakeSource>("wallet");
   const [submission, setSubmission] = useState<SubmissionDetails>(initialSubmission);
-  const [walletAddress, setWalletAddress] = useState(DEMO_WALLET);
+  const [walletAddress, setWalletAddress] = useState("");
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [selectedTransferId, setSelectedTransferId] = useState<string>();
+  const [exchange, setExchange] = useState<ExchangeSource>("upbit");
+  const [apiKey, setApiKey] = useState("");
+  const [apiSecret, setApiSecret] = useState("");
+  const [deposits, setDeposits] = useState<ExchangeDeposit[]>([]);
+  const [selectedDepositId, setSelectedDepositId] = useState<string>();
   const [analysis, setAnalysis] = useState<CaseAnalysis>();
   const [statement, setStatement] = useState<UserStatement>(initialStatement);
-  const [includedEvidenceIds, setIncludedEvidenceIds] = useState<string[]>([]);
   const [report, setReport] = useState<CaseReport>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
@@ -56,76 +76,134 @@ export function CaseWorkspace() {
     () => transfers.find((transfer) => transfer.id === selectedTransferId),
     [selectedTransferId, transfers],
   );
+  const isDemo = (analysis?.scope.provider ?? transfers[0]?.sourceProvider) === "demo";
 
   const searchTransfers = async () => {
     setError(undefined);
-    if (!/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+    if (!isAddress(walletAddress)) {
       setError("42자리 Ethereum 주소를 입력해 주세요.");
       return;
     }
 
     setLoading(true);
     try {
-      const nextTransfers = await getInboundTransfers(walletAddress);
-      setTransfers(nextTransfers);
-      setSelectedTransferId(nextTransfers[0]?.id);
-    } catch {
-      setError("입금 내역을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
+      const result = await getInboundTransfers(walletAddress);
+      setTransfers(result.transfers);
+      setSelectedTransferId(undefined);
+    } catch (caught) {
+      setError(errorMessage(caught, "입금 내역을 불러오지 못했습니다."));
     } finally {
       setLoading(false);
     }
   };
 
-  const runAnalysis = async () => {
-    if (!selectedTransfer) return;
+  const importFromMetaMask = async () => {
+    setError(undefined);
+    try {
+      setWalletAddress(await readWalletAddress());
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "주소를 가져오지 못했습니다.");
+    }
+  };
+
+  const loadDeposits = async () => {
+    setError(undefined);
     setLoading(true);
+    try {
+      const nextDeposits = await getExchangeDeposits({ exchange, apiKey, apiSecret });
+      setDeposits(nextDeposits);
+      setSelectedDepositId(undefined);
+      setApiSecret(""); // 시크릿은 쓰고 바로 지웁니다
+    } catch (caught) {
+      setError(errorMessage(caught, "거래소 입금 목록을 불러오지 못했습니다."));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const runAnalysis = async (wallet: string, transfer: Transfer) => {
+    setError(undefined);
+    setLoading(true);
+    setAnalysis(undefined);
     setStep("analysis");
     try {
-      const nextAnalysis = await analyzeCase({ walletAddress, transfer: selectedTransfer });
-      setAnalysis(nextAnalysis);
-      setIncludedEvidenceIds(nextAnalysis.evidence.map((item) => item.id));
+      setAnalysis(await analyzeCase({ walletAddress: wallet, transfer }));
+    } catch (caught) {
+      setError(errorMessage(caught, "조사에 실패했습니다. 다시 시도해 주세요."));
+      setStep("transaction");
     } finally {
+      setLoading(false);
+    }
+  };
+
+  const startAnalysis = async () => {
+    if (source === "wallet") {
+      if (selectedTransfer) await runAnalysis(walletAddress, selectedTransfer);
+      return;
+    }
+
+    // 거래소 입금 → 거래 해시로 온체인 전송 찾기 → 조사
+    const deposit = deposits.find((item) => item.id === selectedDepositId);
+    if (!deposit?.txHash) {
+      setError("거래 해시가 없는 입금은 조사할 수 없습니다 (거래소 내부 이체일 수 있습니다).");
+      return;
+    }
+
+    setError(undefined);
+    setLoading(true);
+    try {
+      const found = await lookupTransfers(deposit.txHash);
+      const transfer = found.find((item) => item.asset === deposit.asset) ?? found[0];
+      if (!transfer) {
+        setError("블록체인에서 해당 거래를 찾지 못했습니다.");
+        setLoading(false);
+        return;
+      }
+      setWalletAddress(transfer.to);
+      setTransfers([transfer]);
+      setSelectedTransferId(transfer.id);
+      setSubmission((current) => ({ ...current, exchange: deposit.exchange }));
+      await runAnalysis(transfer.to, transfer);
+    } catch (caught) {
+      setError(errorMessage(caught, "거래를 찾지 못했습니다."));
       setLoading(false);
     }
   };
 
   const buildReport = async () => {
-    if (!selectedTransfer || !analysis) return;
+    if (!selectedTransfer) return;
+    setError(undefined);
     setLoading(true);
     try {
-      const nextReport = await createReport({
-        submission,
-        walletAddress,
-        transfer: selectedTransfer,
-        analysis,
-        statement,
-        includedEvidenceIds,
-      });
-      setReport(nextReport);
+      const result = await createReport({ walletAddress, transfer: selectedTransfer, statement, submission });
+      setAnalysis(result.analysis); // 서버가 다시 조사한 결과로 보고서를 만듭니다
+      setReport(result.report);
       setStep("report");
+    } catch (caught) {
+      setError(errorMessage(caught, "자료를 만들지 못했습니다. 다시 시도해 주세요."));
     } finally {
       setLoading(false);
     }
   };
 
-  const toggleEvidence = (id: string) => {
-    setIncludedEvidenceIds((current) =>
-      current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
-    );
-  };
-
   const restart = () => {
     setStep("transaction");
     setSubmission(initialSubmission);
-    setWalletAddress(DEMO_WALLET);
+    setWalletAddress("");
     setTransfers([]);
     setSelectedTransferId(undefined);
+    setApiKey("");
+    setApiSecret("");
+    setDeposits([]);
+    setSelectedDepositId(undefined);
     setAnalysis(undefined);
     setStatement(initialStatement);
-    setIncludedEvidenceIds([]);
     setReport(undefined);
     setError(undefined);
   };
+
+  const canAnalyze =
+    source === "wallet" ? Boolean(selectedTransfer) : Boolean(selectedDepositId);
 
   return (
     <div className={sidebarOpen ? "app-shell" : "app-shell is-sidebar-collapsed"}>
@@ -157,7 +235,7 @@ export function CaseWorkspace() {
                   <button
                     type="button"
                     aria-current={isCurrent ? "step" : undefined}
-                    disabled={index > currentIndex}
+                    disabled={index > currentIndex || loading}
                     onClick={() => setStep(item.id)}
                   >
                     <span>{String(index + 1).padStart(2, "0")}</span>
@@ -168,25 +246,43 @@ export function CaseWorkspace() {
             })}
           </ol>
         </nav>
+        {isDemo ? <p className="demo-badge">데모 데이터 · 주소와 거래는 가짜입니다</p> : null}
       </aside>
 
       <main className="workspace">
         {step === "transaction" ? (
           <TransactionScreen
+            source={source}
+            onSourceChange={(next) => {
+              setSource(next);
+              setError(undefined);
+            }}
             walletAddress={walletAddress}
             transfers={transfers}
             selectedTransferId={selectedTransferId}
+            onAddressChange={setWalletAddress}
+            onUseExample={() => setWalletAddress(EXAMPLE_WALLET)}
+            onImportMetaMask={importFromMetaMask}
+            onSearch={searchTransfers}
+            onSelectTransfer={setSelectedTransferId}
+            exchange={exchange}
+            apiKey={apiKey}
+            apiSecret={apiSecret}
+            deposits={deposits}
+            selectedDepositId={selectedDepositId}
+            onExchangeChange={setExchange}
+            onApiKeyChange={setApiKey}
+            onApiSecretChange={setApiSecret}
+            onLoadDeposits={loadDeposits}
+            onSelectDeposit={setSelectedDepositId}
             loading={loading}
             error={error}
-            onAddressChange={setWalletAddress}
-            onSearch={searchTransfers}
-            onSelect={setSelectedTransferId}
-            onNext={runAnalysis}
+            canAnalyze={canAnalyze}
+            onNext={startAnalysis}
           />
         ) : null}
         {step === "analysis" ? (
           <AnalysisScreen
-            transfer={selectedTransfer}
             analysis={analysis}
             loading={loading}
             onBack={() => setStep("transaction")}
@@ -198,24 +294,20 @@ export function CaseWorkspace() {
             statement={statement}
             analysis={analysis}
             submission={submission}
-            includedEvidenceIds={includedEvidenceIds}
             onStatementChange={setStatement}
             onSubmissionChange={setSubmission}
-            onEvidenceToggle={toggleEvidence}
             onBack={() => setStep("analysis")}
             onNext={buildReport}
             loading={loading}
+            error={error}
           />
         ) : null}
         {step === "report" ? (
           <ReportScreen
             submission={submission}
-            walletAddress={walletAddress}
-            transfer={selectedTransfer}
             analysis={analysis}
             statement={statement}
             report={report}
-            includedEvidenceIds={includedEvidenceIds}
             onBack={() => setStep("statement")}
             onRestart={restart}
           />

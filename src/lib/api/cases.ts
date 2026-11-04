@@ -1,83 +1,84 @@
-import { makeMockReport, mockAnalysis, mockTransfers } from "@/mocks/case";
+// 화면은 이 파일을 통해서만 서버(/api)를 부릅니다.
+// 요청·응답 모양은 docs/api.md와 src/types/case.ts를 따릅니다.
+
 import type {
   CaseAnalysis,
   CaseReport,
+  ExchangeDeposit,
+  ExchangeSource,
   SubmissionDetails,
   Transfer,
   UserStatement,
 } from "@/types/case";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "");
+export class ClientApiError extends Error {
+  constructor(
+    public readonly code: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  if (!API_BASE_URL) {
-    throw new Error("MOCK_MODE");
+async function post<T>(path: string, body: unknown): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new ClientApiError("NETWORK", "서버에 연결하지 못했습니다.");
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
-  });
-
+  const data = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new Error(`API_ERROR_${response.status}`);
+    const error = data?.error;
+    throw new ClientApiError(error?.code ?? `HTTP_${response.status}`, error?.message ?? "요청을 처리하지 못했습니다.");
   }
-
-  return response.json() as Promise<T>;
+  return data as T;
 }
 
-const pause = (duration = 480) =>
-  new Promise<void>((resolve) => window.setTimeout(resolve, duration));
-
-export async function getInboundTransfers(address: string): Promise<Transfer[]> {
-  if (API_BASE_URL) {
-    const data = await request<{ transfers: Transfer[] }>("/api/wallets/inbound-transfers", {
-      method: "POST",
-      body: JSON.stringify({ chainId: 1, address }),
-    });
-    return data.transfers;
-  }
-
-  await pause();
-  return mockTransfers;
+export async function getInboundTransfers(address: string) {
+  return post<{ transfers: Transfer[]; complete: boolean; provider: string }>(
+    "/api/wallets/inbound-transfers",
+    { address },
+  );
 }
 
-export async function analyzeCase(input: {
-  walletAddress: string;
-  transfer: Transfer;
-}): Promise<CaseAnalysis> {
-  if (API_BASE_URL) {
-    return request<CaseAnalysis>("/api/cases/analyze", {
-      method: "POST",
-      body: JSON.stringify({
-        walletAddress: input.walletAddress,
-        txHash: input.transfer.txHash,
-      }),
-    });
-  }
+export async function lookupTransfers(txHash: string) {
+  const data = await post<{ transfers: Transfer[] }>("/api/transfers/lookup", { txHash });
+  return data.transfers;
+}
 
-  await pause(760);
-  return mockAnalysis;
+export async function getExchangeDeposits(input: { exchange: ExchangeSource; apiKey: string; apiSecret: string }) {
+  const data = await post<{ deposits: ExchangeDeposit[] }>("/api/exchanges/deposits", input);
+  return data.deposits;
+}
+
+export async function analyzeCase(input: { walletAddress: string; transfer: Transfer }) {
+  return post<CaseAnalysis>("/api/cases/analyze", {
+    walletAddress: input.walletAddress,
+    txHash: input.transfer.txHash,
+    eventIndex: input.transfer.eventIndex,
+  });
 }
 
 export async function createReport(input: {
-  submission: SubmissionDetails;
   walletAddress: string;
   transfer: Transfer;
-  analysis: CaseAnalysis;
   statement: UserStatement;
-  includedEvidenceIds: string[];
-}): Promise<CaseReport> {
-  if (API_BASE_URL) {
-    return request<CaseReport>("/api/cases/report", {
-      method: "POST",
-      body: JSON.stringify(input),
-    });
-  }
-
-  await pause(520);
-  return makeMockReport(input.statement, input.submission);
+  submission: SubmissionDetails;
+}) {
+  return post<{ analysis: CaseAnalysis; report: CaseReport }>("/api/cases/report", {
+    walletAddress: input.walletAddress,
+    txHash: input.transfer.txHash,
+    eventIndex: input.transfer.eventIndex,
+    statement: input.statement,
+    submission: input.submission,
+  });
 }
+
+export const errorMessage = (error: unknown, fallback: string) =>
+  error instanceof ClientApiError ? error.message : fallback;
